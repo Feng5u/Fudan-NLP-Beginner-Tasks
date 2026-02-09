@@ -1,6 +1,7 @@
 # ================================
 # 0. Import
 # ================================
+import time
 import torch
 import numpy as np
 import pandas as pd
@@ -19,8 +20,8 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 # 1. Data Preprocessing
 # ================================
 class DataPreprocessor:
-    def __init__(self, train_path, test_path, \
-                 val_size=0.2, n=(1,1), max_features=5000, device='cpu'):
+    def __init__(self, train_path, test_path, use_tfidf=True, \
+                 val_size=0.2, n=(1,2), max_features=10000, device='cpu'):
         """
         Initialization of DataPreprocessor
         
@@ -38,6 +39,7 @@ class DataPreprocessor:
 
         self.n = n
         self.max_features = max_features
+        self.use_tfidf = use_tfidf
 
         self.device = device
 
@@ -87,10 +89,16 @@ class DataPreprocessor:
         if self.df_val is None:
             self.separate_data()
         
-        vectorizer = CountVectorizer(
-            ngram_range=self.n,
-            max_features=self.max_features
-        )
+        if self.use_tfidf is True:
+            vectorizer = TfidfVectorizer(
+                ngram_range=self.n,
+                max_features=self.max_features
+            )
+        else:
+            vectorizer = CountVectorizer(
+                ngram_range=self.n,
+                max_features=self.max_features
+            )
 
         self.X_train = vectorizer.fit_transform(self.df_train['text']).toarray()
         self.X_val = vectorizer.transform(self.df_val['text']).toarray()
@@ -99,6 +107,9 @@ class DataPreprocessor:
         self.y_train = self.df_train['label'].values
         self.y_val = self.df_val['label'].values
         self.y_test = self.df_test['label'].values
+
+        feature_dimension = len(vectorizer.vocabulary_)
+        print("Feature dimension: ", feature_dimension)
 
     def to_torch_tensors(self):
         """
@@ -129,7 +140,7 @@ class DataPreprocessor:
 # ================================
 class LinearModel:
     def __init__(self, input_dim, num_classes, \
-                 reg_lambda=0.0, device='cpu'):
+                 reg_lambda=0.0, function="cross_entropy", device='cpu'):
         """
         Initialization of the LinearModel
         
@@ -138,10 +149,11 @@ class LinearModel:
         :param device: Device
         """
         self.reg_lambda = reg_lambda
+        self.function = function
         self.device = device
 
-        self.W = torch.zeros(input_dim, num_classes, device=self.device)
-        self.b = torch.zeros(num_classes, device=self.device)  # 修正：应该是(num_classes,)
+        self.W = torch.randn(input_dim, num_classes, device=self.device) * 0.01
+        self.b = torch.zeros(num_classes, device=self.device)
 
         self.W.requires_grad_(True)
         self.b.requires_grad_(True)
@@ -154,7 +166,7 @@ class LinearModel:
         
         :param X: Input data, shape:(batch_size, input_dim)
         """
-        scores = torch.matmul(X, self.W) + self.b  # 修正：torch.nn改为torch.matmul
+        scores = torch.matmul(X, self.W) + self.b
 
         scores_max = torch.max(scores, dim=1, keepdim=True)[0]
         exp_scores = torch.exp(scores - scores_max)
@@ -178,8 +190,29 @@ class LinearModel:
         :param y_hat: Predicted labels
         :param y: True labels
         :param n: Number of input data
+        :param function: Loss function type
         """
-        return -torch.sum(y * torch.log(y_hat + 1e-8)) / n
+        if self.function == "cross_entropy":
+            return -torch.sum(y * torch.log(y_hat + 1e-8)) / n
+
+        elif self.function == "mse":
+            return torch.sum((y - y_hat) ** 2) / n
+        
+        elif self.function == "hinge":
+            correct_scores = torch.sum(y_hat * y, dim=1)
+            other_scores = y_hat * (1 - y) - y * 1e10
+            max_other_scores, _ = torch.max(other_scores, dim=1)
+            
+            hinge_loss = torch.clamp(1 + max_other_scores - correct_scores, min=0)
+            return torch.sum(hinge_loss) / n
+        
+        elif self.function == "perceptron":
+            correct_scores = torch.sum(y_hat * y, dim=1)
+            other_scores = y_hat * (1 - y) - y * 1e10
+            max_other_scores, _ = torch.max(other_scores, dim=1)
+            
+            perceptron_loss = torch.clamp(-(correct_scores - max_other_scores), min=0)
+            return torch.sum(perceptron_loss) / n
 
     def compute_loss(self, X, y):
         """
@@ -187,6 +220,7 @@ class LinearModel:
         
         :param X: Input data, shape:(batch_size, input_dim)
         :param y: True label, shape:(batch_size)
+        :param function: Loss function type
         """
         batch_size = X.shape[0]
 
@@ -200,6 +234,24 @@ class LinearModel:
         if self.reg_lambda > 0:
             loss += self.reg_lambda * (torch.sum(self.W ** 2) + torch.sum(self.b ** 2))
 
+        return loss
+    
+    def compute_val_loss(self, X, y):
+        """
+        Compute the Loss
+        
+        :param X: Input data, shape:(batch_size, input_dim)
+        :param y: True label, shape:(batch_size)
+        :param function: Loss function type
+        """
+        batch_size = X.shape[0]
+
+        probs = self.forward(X)
+
+        y_onehot = torch.zeros(batch_size, self.num_classes, device=self.device)
+        y_onehot.scatter_(1, y.view(-1, 1), 1)
+
+        loss = self.loss(probs, y_onehot, batch_size)
         return loss
 
     def compute_accuracy(self, X, y):
@@ -216,16 +268,15 @@ class LinearModel:
 
 class LinearTrainer:
     def __init__(self, model, batch_size=64, learning_rate=0.01, \
-                 reg_lambda=0.0, epochs=100, verbose=True, \
-                 early_stopping_patience=5, device='cpu'):
+                 epochs=10000, verbose=True, \
+                 early_stopping_patience=10, device='cpu'):
         """
         Initialization of the LinearTrainer
         
         :param model: Model
         :param batch_size: Batch size
         :param learning_rate: Learning Rate
-        :param reg_lambda: Regularization parameter
-        :param epochs: Epochs (修正拼写错误)
+        :param epochs: Epochs
         :param verbose: Visualization enable
         :param early_stopping_patience: When to stop
         :param device: Device
@@ -234,8 +285,7 @@ class LinearTrainer:
         
         self.learning_rate = learning_rate
         self.batch_size = batch_size
-        self.epochs = epochs  # 修正：epocheds改为epochs
-        self.reg_lambda = reg_lambda
+        self.epochs = epochs
         self.verbose = verbose
         self.early_stopping_patience = early_stopping_patience
 
@@ -285,14 +335,14 @@ class LinearTrainer:
             loss.backward()
 
             with torch.no_grad():
-                self.model.W -= self.learning_rate * self.model.W.grad  # 修正：应该是减法
-                self.model.b -= self.learning_rate * self.model.b.grad  # 修正：应该是减法
+                self.model.W -= self.learning_rate * self.model.W.grad
+                self.model.b -= self.learning_rate * self.model.b.grad
 
             self.model.W.grad.zero_()
             self.model.b.grad.zero_()
 
             acc = self.model.compute_accuracy(batch_X, batch_y)
-            total_loss += loss.item()  # 需要取数值
+            total_loss += loss.item()
             total_acc += acc
 
         avg_loss = total_loss / len(batches)
@@ -319,13 +369,13 @@ class LinearTrainer:
             self.model.W.requires_grad_(False)
             self.model.b.requires_grad_(False)
             
-            val_loss = self.model.compute_loss(X_val, y_val).item()
+            val_loss = self.model.compute_val_loss(X_val, y_val).item()
             val_acc = self.model.compute_accuracy(X_val, y_val)
 
             self.train_losses.append(train_loss)
             self.train_accs.append(train_acc)
             self.val_losses.append(val_loss)
-            self.val_accs.append(val_acc)  # 修正：appennd改为append
+            self.val_accs.append(val_acc)
 
             if self.verbose and (epoch + 1) % (self.epochs / 10) == 0:
                 print(f"Epoch {epoch + 1} / {self.epochs}:")
@@ -371,6 +421,7 @@ def raw_experiment():
     model = LinearModel(
         input_dim=input_dim,
         num_classes=num_classes,
+        reg_lambda=1e-4,
         device=DEVICE
     )
 
@@ -388,8 +439,169 @@ def raw_experiment():
     print(f"Final Test Loss: {test_loss:.4f}")
     print(f"Final Test Accuracy: {test_acc:.4f}")
     
+def feature_experiment(n_tmp, mf):
+    print("=" * 50)
+    print("0. Data Preprocessing")
+    print("=" * 50)
+    preprocessor = DataPreprocessor(
+        train_path=TRAIN_PATH,
+        test_path=TEST_PATH,
+        n=n_tmp,
+        max_features=mf,
+        device=DEVICE
+    )
+
+    X_train, X_test, X_val, y_train, y_test, y_val = preprocessor.run()
+    print("Data ready for training.\n")
+
+    input_dim = X_train.shape[1]
+    num_classes = len(torch.unique(y_train))
+
+    print("=" * 50)
+    print("1. Experiment Start")
+    print("=" * 50)
+    model = LinearModel(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        device=DEVICE
+    )
+
+    trainer = LinearTrainer(
+        model=model,
+        device=DEVICE
+    )
+    
+    start_time = time.time()
+    trainer.train(X_train, y_train, X_val, y_val)
+    end_time = time.time()
+
+    test_loss = model.compute_loss(X_test, y_test)
+    test_acc = model.compute_accuracy(X_test, y_test)
+    
+    print("\nTraining completed!")
+    print(f"Final Test Loss: {test_loss:.4f}")
+    print(f"Final Test Accuracy: {test_acc:.4f}")
+    print(f"Time Cost: {end_time - start_time} s")
+
+def lr_experiment(lr, fc):
+    print("=" * 50)
+    print("0. Data Preprocessing")
+    print("=" * 50)
+    preprocessor = DataPreprocessor(
+        train_path=TRAIN_PATH,
+        test_path=TEST_PATH,
+        device=DEVICE
+    )
+
+    X_train, X_test, X_val, y_train, y_test, y_val = preprocessor.run()
+    print("Data ready for training.\n")
+
+    input_dim = X_train.shape[1]
+    num_classes = len(torch.unique(y_train))
+
+    print("=" * 50)
+    print("1. Experiment Start")
+    print("=" * 50)
+    model = LinearModel(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        function=fc,
+        device=DEVICE
+    )
+
+    trainer = LinearTrainer(
+        model=model,
+        learning_rate=lr,
+        device=DEVICE
+    )
+    
+    start_time = time.time()
+    trainer.train(X_train, y_train, X_val, y_val)
+    end_time = time.time()
+
+    test_loss = model.compute_loss(X_test, y_test)
+    test_acc = model.compute_accuracy(X_test, y_test)
+    
+    print("\nTraining completed!")
+    print(f"Final Test Loss: {test_loss:.4f}")
+    print(f"Final Test Accuracy: {test_acc:.4f}")
+    print(f"Time cost: {end_time - start_time} s")
+
+def rl_experiment(rl):
+    print("=" * 50)
+    print("0. Data Preprocessing")
+    print("=" * 50)
+    preprocessor = DataPreprocessor(
+        train_path=TRAIN_PATH,
+        test_path=TEST_PATH,
+        device=DEVICE
+    )
+
+    X_train, X_test, X_val, y_train, y_test, y_val = preprocessor.run()
+    print("Data ready for training.\n")
+
+    input_dim = X_train.shape[1]
+    num_classes = len(torch.unique(y_train))
+
+    print("=" * 50)
+    print("1. Experiment Start")
+    print("=" * 50)
+    model = LinearModel(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        reg_lambda=rl,
+        device=DEVICE
+    )
+
+    trainer = LinearTrainer(
+        model=model,
+        device=DEVICE
+    )
+    
+    start_time = time.time()
+    trainer.train(X_train, y_train, X_val, y_val)
+    end_time = time.time()
+
+    test_loss = model.compute_loss(X_test, y_test)
+    test_acc = model.compute_accuracy(X_test, y_test)
+    
+    print("Training completed!")
+    print(f"Final Test Loss: {test_loss:.4f}")
+    print(f"Final Test Accuracy: {test_acc:.4f}")
+    print(f"Time cost: {end_time - start_time} s")
+
 # ================================
 # 4. Main
 # ================================
 if __name__ == "__main__":
+    # To verify the code's function
     raw_experiment()
+
+    # To compare different n and max_feature
+    # for n in [(1, 1), (2, 2), (3, 3), (1, 2), (1, 3), (2, 3)]:
+    #     for mf in [1000, 5000, 10000, 20000]:
+    #         print("=" * 50)
+    #         print("Experiment: Changing parameter max_feature & n")
+    #         print(f"max_feature: {mf}   n: {n}")
+    #         print("=" * 50)
+    #         feature_experiment(n, mf)
+    #         print()
+
+    # To compare different loss function and learning_rate
+    # for fc in ("cross_entropy", "mse", "hinge", "perceptron"):
+    #     for lr in [0.001, 0.01, 0.1, 0.5]:
+    #         print("=" * 50)
+    #         print("Experiment: Changing parameter learning_rate & loss function type")
+    #         print(f"learning_rate: {lr}    loss function type: {fc}")
+    #         print("=" * 50)
+    #         lr_experiment(lr, fc)
+    #         print()
+
+    # To compare different regular lambda
+    # for rl in [0.001, 0.01, 0.1, 1, 10]:
+    #     print("=" * 50)
+    #     print("Experimen: Changing parameter: regular lambda")
+    #     print(f"regular lambda: {rl}")
+    #     print("=" * 50)
+    #     rl_experiment(rl)
+    #     print()
