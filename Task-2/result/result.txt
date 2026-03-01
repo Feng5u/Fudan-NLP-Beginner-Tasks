@@ -1,0 +1,56 @@
+exp1: 测试不同损失函数、学习率
+optimizer: adam
+filter_size: [3, 4, 5]
+num_filters: 128
+==============================
+cross_entropy 0.0001		0.62622
+cross_entropy 0.001		0.63149
+cross_entropy 0.01		0.60281
+cross_entropy 0.1		0.51775
+hinge 0.0001			0.62153
+hinge 0.001			0.62822
+hinge 0.01			0.59427
+hinge 0.1			0.51767
+perceptron 0.0001		0.52718
+Epoch: [1/50], Loss: 0.2002, Val Acc: 0.5244
+Epoch: [5/50], Loss: 0.0022, Val Acc: 0.4650
+Epoch: [10/50], Loss: 0.0002, Val Acc: 0.4451
+Epoch: [15/50], Loss: 0.0001, Val Acc: 0.2268
+Epoch: [20/50], Loss: 0.0000, Val Acc: 0.4973
+Epoch: [25/50], Loss: 0.0000, Val Acc: 0.4989
+Epoch: [30/50], Loss: 0.0000, Val Acc: 0.1830
+Epoch: [35/50], Loss: 0.0000, Val Acc: 0.0693
+Epoch: [40/50], Loss: 0.0000, Val Acc: 0.5007
+Epoch: [45/50], Loss: 0.0000, Val Acc: 0.0673
+Epoch: [50/50], Loss: 0.0000, Val Acc: 0.1811
+最佳验证准确率: 0.5244
+perceptron 0.001		0.51780
+perceptron 0.01			0.51792
+perceptron 0.1			0.51789
+MSE 0.0001			0.60788
+MSE 0.001			0.61992
+MSE 0.01			0.51709
+MSE 0.1				0.51642
+
+exp2: 测试卷积核个数、大小和不同优化器
+[2, 3, 4] 100 adam	0.63155
+[3, 4, 5] 100 adam	0.62692
+[4, 5, 6] 100 adam	0.62767
+[5, 6, 7] 100 adam	0.62693
+
+[3, 4, 5] 50 adam	0.62778
+[3, 4, 5] 100 adam	0.62692
+[3, 4, 5] 150 adam	0.62716
+[3, 4, 5] 200 adam	0.62639
+
+[3, 4, 5] 150 sgd	0.59065
+[3, 4, 5] 150 rmsprop	0.62954
+
+exp3: 测试使用 glove 预训练向量
+[3, 4, 5] 150 adam + glove		0.64128
+[3, 4, 5] 150 adam			0.62716
+
+exp4: 测试 RNN、Transformer
+CNN			0.62716
+RNN			0.62422
+Transformer		0.61023
