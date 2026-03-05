@@ -12,7 +12,7 @@ class BaseModeL(nn.Module):
         """
         统计参数数量
         """
-        return sum(p.numel() for p in self.parameters if p.requires_grad())
+        return sum(p.numel() for p in self.parameters() if p.requires_grad())
 
     def forward(self, *args, **kwargs):
         """

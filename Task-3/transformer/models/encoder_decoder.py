@@ -57,7 +57,7 @@ class EncoderDecoder(BaseModeL):
         返回：
             编码器输出
         """
-        return self.encode(self.src_embed(src), src_mask)
+        return self.encoder(self.src_embed(src), src_mask)
 
     def decode(self, memory, src_mask, tgt, tgt_mask):
         """

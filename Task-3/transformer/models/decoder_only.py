@@ -38,7 +38,7 @@ class DecoderOnly(BaseModeL):
             返回解码器输出
         """
         X = self.embed(X)
-        X = self.decode(X, None, None, mask)
+        X = self.decoder(X, None, None, mask)
         return self.generator(X)
 
 def make_decoder_only_model(vocab_size, N=12, d_model=768,
