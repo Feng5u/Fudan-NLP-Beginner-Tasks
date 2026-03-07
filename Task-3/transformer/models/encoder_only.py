@@ -48,12 +48,29 @@ class EncoderOnly(BaseModeL):
 def make_encoder_only_model(vocab_size, N=12, d_model=768,
                             d_ff=3072, h=12, dropout=0.1,
                             task = 'mlm', num_classes=2):
-    """
-    创建 Decoder-Only 模型
 
-    参数：
-        task: 'mlm'（掩码语言模型）, 'classification', 或 None
-    """
+    if task == 'mlm':
+        output_layer = nn.Linear(d_model, vocab_size)
+    elif task == 'classification':
+        output_layer = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.Tanh(),
+            nn.Linear(d_model, num_classes)
+        )
+    else:
+        output_layer = None
+
+    model = EncoderOnly(
+        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        nn.Sequential(Embedding(d_model, vocab_size), c(position)),
+        output_layer
+    )
+
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+
+    return model
     c = copy.deepcopy
     attn = MultiHeadedAttention(h, d_model)
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)

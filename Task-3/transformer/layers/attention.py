@@ -5,25 +5,11 @@ from ..utils.clones import clones
 
 
 def attention(query, key, value, mask=None, dropout=None):
-    """
-    注意力计算函数
-
-    计算 Scaled Dot Product Attention
-
-    参数：
-        query: 查询矩阵
-        key: 键矩阵
-        value: 值矩阵
-        mask: 掩码
-        dropout: dropout 层实例
-
-    返回：
-        注意力输出和注意力权重
-    """
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     
     if mask is not None:
+        mask = mask.bool() if mask.dtype != torch.bool else mask
         scores = scores.masked_fill(mask == 0, -1e9)
     p_attn = scores.softmax(dim=-1)
 

@@ -85,9 +85,6 @@ class AdditionProcessor(BaseProcessor):
         return train_indices, val_indices, test_indices
     
     def _digit_pair_split(self):
-        """
-        按数字组合划分
-        """
         train_pairs = self.config.get('train_pairs', 
                                      [(3,3), (3,4), (4,3)])
         val_pairs = self.config.get('val_pairs',
@@ -114,6 +111,13 @@ class AdditionProcessor(BaseProcessor):
             elif pair in test_set:
                 test_indices.append(idx)
         
+        if len(train_indices) == 0:
+            print(f"警告: 训练组合 {train_pairs} 没有对应样本")
+        if len(val_indices) == 0:
+            print(f"警告: 验证组合 {val_pairs} 没有对应样本")
+        if len(test_indices) == 0:
+            print(f"警告: 测试组合 {test_pairs} 没有对应样本")
+        
         print(f"数字组合划分:")
         print(f"  训练组合 {train_pairs}: {len(train_indices)} 样本")
         print(f"  验证组合 {val_pairs}: {len(val_indices)} 样本")
@@ -122,9 +126,6 @@ class AdditionProcessor(BaseProcessor):
         return train_indices, val_indices, test_indices
     
     def _max_digits_split(self):
-        """
-        按最大位数划分
-        """
         train_digits = self.config.get('train_max_digits', [3])
         val_digits = self.config.get('val_max_digits', [4])
         test_digits = self.config.get('test_max_digits', [5])
@@ -148,6 +149,13 @@ class AdditionProcessor(BaseProcessor):
             elif max_d in test_set:
                 test_indices.append(idx)
         
+        if len(train_indices) == 0:
+            print(f"警告: 训练位数 {train_digits} 没有对应样本")
+        if len(val_indices) == 0:
+            print(f"警告: 验证位数 {val_digits} 没有对应样本")
+        if len(test_indices) == 0:
+            print(f"警告: 测试位数 {test_digits} 没有对应样本")
+        
         print(f"最大位数划分:")
         print(f"  训练位数 {train_digits}: {len(train_indices)} 样本")
         print(f"  验证位数 {val_digits}: {len(val_indices)} 样本")
@@ -156,9 +164,6 @@ class AdditionProcessor(BaseProcessor):
         return train_indices, val_indices, test_indices
     
     def _result_range_split(self):
-        """
-        按结果范围划分
-        """
         train_range = self.config.get('train_range', (0, 1000))
         val_range = self.config.get('val_range', (1001, 5000))
         test_range = self.config.get('test_range', (5001, 20000))
@@ -178,6 +183,13 @@ class AdditionProcessor(BaseProcessor):
             elif test_range[0] <= result <= test_range[1]:
                 test_indices.append(idx)
         
+        if len(train_indices) == 0:
+            print(f"警告: 训练范围 {train_range} 没有对应样本")
+        if len(val_indices) == 0:
+            print(f"警告: 验证范围 {val_range} 没有对应样本")
+        if len(test_indices) == 0:
+            print(f"警告: 测试范围 {test_range} 没有对应样本")
+        
         print(f"结果范围划分:")
         print(f"  训练范围 {train_range}: {len(train_indices)} 样本")
         print(f"  验证范围 {val_range}: {len(val_indices)} 样本")
@@ -186,12 +198,9 @@ class AdditionProcessor(BaseProcessor):
         return train_indices, val_indices, test_indices
     
     def _carry_complexity_split(self):
-        """
-        按进位复杂度划分
-        """
-        simple = []      # 无进位
-        medium = []      # 1-2次进位
-        complex_carry = []  # 3次以上进位
+        simple = []
+        medium = []
+        complex_carry = []
         
         for idx in range(len(self.dataset)):
             item = self.dataset.data[idx]
@@ -226,6 +235,13 @@ class AdditionProcessor(BaseProcessor):
         train_indices = simple_train + medium_train + complex_train
         val_indices = simple_val + medium_val + complex_val
         test_indices = simple_test + medium_test + complex_test
+        
+        if len(train_indices) == 0:
+            print(f"警告: 训练集为空")
+        if len(val_indices) == 0:
+            print(f"警告: 验证集为空")
+        if len(test_indices) == 0:
+            print(f"警告: 测试集为空")
         
         print(f"进位复杂度划分:")
         print(f"  无进位样本: {len(simple)}")

@@ -176,6 +176,13 @@ class LanguageModelingExperiment:
         self.val_dataset = LMDataset(dataset_config, split='validation')
         self.test_dataset = LMDataset(dataset_config, split='test')
         
+        if len(self.train_dataset) == 0:
+            raise ValueError("训练数据集为空")
+        if len(self.val_dataset) == 0:
+            raise ValueError("验证数据集为空")
+        if len(self.test_dataset) == 0:
+            raise ValueError("测试数据集为空")
+        
         processor_config = {
             'tokenizer_type': tokenizer_type,
             'max_length': max_length,
@@ -282,14 +289,22 @@ class LanguageModelingExperiment:
         elif self.config['arch_type'] == 'encoder_only':
             src = input_ids
             mask = self.make_mask(src, pad_idx)
-            outputs = self.model(src, mask)
             
+            if training:
+                mlm_mask = torch.rand_like(src.float()) < 0.15
+                mlm_mask = mlm_mask & (src != pad_idx)
+                mlm_inputs = src.clone()
+                mlm_inputs[mlm_mask] = self.processor.tokenizer.mask_token_id if self.processor.tokenizer.mask_token_id is not None else 103
+            else:
+                mlm_inputs = src
+                mlm_mask = (src != pad_idx)
+            
+            outputs = self.model(mlm_inputs, mask)
             outputs = outputs.reshape(-1, outputs.size(-1))
-            targets = input_ids.reshape(-1)
+            targets = src.reshape(-1)
             
-            mask = (targets != pad_idx)
-            outputs = outputs[mask]
-            targets = targets[mask]
+            outputs = outputs[mlm_mask.reshape(-1)]
+            targets = targets[mlm_mask.reshape(-1)]
         
         return outputs, targets
     

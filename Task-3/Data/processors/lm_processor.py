@@ -27,9 +27,6 @@ class LMProcessor:
         print(f"  - 最大长度: {config.get('max_length')}")
     
     def _create_tokenizer(self):
-        """
-        创建 tokenizer
-        """
         tokenizer_type = self.config.get('tokenizer_type', 'bert')
         
         model_map = {
@@ -53,14 +50,14 @@ class LMProcessor:
         
         vocab_size = self.config.get('vocab_size', None)
         if vocab_size and vocab_size < len(tokenizer):
-            print(f"注意: 限制词表大小从 {len(tokenizer)} 到 {vocab_size}")
+            print(f"限制词表大小从 {len(tokenizer)} 到 {vocab_size}")
+            tokenizer_vocab = list(tokenizer.get_vocab().keys())
+            tokenizer_vocab = tokenizer_vocab[:vocab_size]
+            tokenizer.add_tokens([token for token in tokenizer_vocab if token not in tokenizer.get_vocab()])
         
         return tokenizer
     
     def _collate_fn(self, batch_texts):
-        """
-        批处理函数：编码和padding
-        """
         encoded = self.tokenizer(
             batch_texts,
             truncation=True,
@@ -73,7 +70,7 @@ class LMProcessor:
         
         target_ids = torch.cat([
             input_ids[:, 1:],
-            torch.full((input_ids.size(0), 1), self.tokenizer.pad_token_id, dtype=input_ids.dtype, device=input_ids.device)
+            torch.full((input_ids.size(0), 1), self.tokenizer.pad_token_id, dtype=input_ids.dtype)
         ], dim=1)
         
         return {

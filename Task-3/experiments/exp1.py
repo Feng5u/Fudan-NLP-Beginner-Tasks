@@ -108,19 +108,16 @@ def set_seed(seed=42):
 
 
 def collate_fn(batch):
-    """
-    批处理函数：padding 到最大长度
-    """
     input_ids = [item['input_ids'] for item in batch]
     target_ids = [item['target_ids'] for item in batch]
     
     max_input_len = max(len(ids) for ids in input_ids)
-    padded_input = torch.zeros(len(input_ids), max_input_len, dtype=torch.long)
+    padded_input = torch.full((len(input_ids), max_input_len), 0, dtype=torch.long)
     for i, ids in enumerate(input_ids):
         padded_input[i, :len(ids)] = ids
     
     max_target_len = max(len(ids) for ids in target_ids)
-    padded_target = torch.zeros(len(target_ids), max_target_len, dtype=torch.long)
+    padded_target = torch.full((len(target_ids), max_target_len), 0, dtype=torch.long)
     for i, ids in enumerate(target_ids):
         padded_target[i, :len(ids)] = ids
     
@@ -317,9 +314,6 @@ class Experiment:
         return tgt_mask
     
     def forward_pass(self, batch, training=True):
-        """
-        前向传播
-        """
         input_ids = batch['input_ids'].to(self.device)
         target_ids = batch['target_ids'].to(self.device)
         pad_idx = self.dataset.get_pad_id()
@@ -339,11 +333,11 @@ class Experiment:
             src = input_ids
             tgt = target_ids[:, :-1]
             
-            combined = torch.cat([src, tgt[:, 1:]], dim=1)
+            combined = torch.cat([src, tgt], dim=1)
             mask = self.make_tgt_mask(combined, pad_idx)
             
             outputs = self.model(combined, mask)
-            outputs = outputs[:, src.size(1)-1:-1, :]
+            outputs = outputs[:, src.size(1):, :]
             outputs = outputs.reshape(-1, outputs.size(-1))
             targets = target_ids[:, 1:].reshape(-1)
             
@@ -400,9 +394,6 @@ class Experiment:
         return avg_loss, avg_acc
     
     def evaluate(self, data_loader):
-        """
-        评估模型
-        """
         self.model.eval()
         total_loss = 0
         correct = 0
@@ -434,18 +425,21 @@ class Experiment:
                         digit_acc[key] = {'correct': 0, 'total': 0}
                     digit_acc[key]['total'] += 1
                     
-                    target_lengths = batch['target_lengths'].to(self.device)
+                    target_lengths = batch['target_lengths']
                     current_target_len = target_lengths[idx]
                     
-                    start_idx = 0
-                    for i in range(idx):
-                        start_idx += target_lengths[i]
+                    if idx == 0:
+                        start_idx = 0
+                    else:
+                        start_idx = target_lengths[:idx].sum().item()
                     
                     end_idx = start_idx + current_target_len
                     target_mask = mask[start_idx:end_idx]
                     if target_mask.any():
                         sample_correct = (predicted[start_idx:end_idx][target_mask] == targets[start_idx:end_idx][target_mask]).sum().item()
-                        digit_acc[key]['correct'] += sample_correct
+                        total_sample = target_mask.sum().item()
+                        if sample_correct == total_sample:
+                            digit_acc[key]['correct'] += 1
         
         avg_loss = total_loss / len(data_loader)
         avg_acc = 100. * correct / total
